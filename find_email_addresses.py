@@ -1,59 +1,59 @@
 #!/usr/bin/env python
 """
-Email scanner: prints all email addresses found on a domain's website.
+Email scanner: prints all email addresses found on a domain.
 Joe Kamibeppu | 10 Oct 2016
 Dependencies:
     Beautiful Soup (pip install beautifulsoup4)
     Requests (pip install requests)
 Usage:
     python find_email_addresses.py [domain name]
-Needs work:
-    - This program does not yet handle all websites. It works correctly
-    for the 'jana.com' domain.
-    - This program recursively traverses through webpages. In order for this
-    program to scale, the recursive method should be replaced with an
-    iterative method.
-    - Line 27: refine email regex pattern
 """
 
-import re
+import sys
 import argparse
 from urlparse import urljoin, urlparse
 import requests
 from bs4 import BeautifulSoup, SoupStrainer
 
-def find_emails(url, emails, visited):
-    ''' finds email addresses by recursively traversing through pages '''
-    #TODO: refine email regex pattern
-    email_pattern = r'\w[\w._-]*@[\w._-]*' + visited[0] # contains domain name
-    response = requests.get(url)
-    emails += re.findall(email_pattern, response.text)
-    visited.append(url)
+def find_emails(base_url):
+    ''' finds email addresses by iteratively traversing through pages '''
+    emails = set()
+    to_visit = set()
+    visited = set()
 
-    for link in BeautifulSoup(response.text, 'html.parser',
-                              parse_only=SoupStrainer('a')):
-        if link.has_attr('href'):
-            new_url = urljoin(url, link['href'])
-            if urlparse(new_url).hostname == urlparse(url).hostname:
+    to_visit.add(base_url)
+
+    while len(to_visit) > 0:
+        page = to_visit.pop()
+        response = requests.get(page)
+        visited.add(page)
+        hrefs = BeautifulSoup(response.text, 'html.parser',
+                              parse_only=SoupStrainer('a'))
+        for email_href in hrefs.select('a[href^=mailto]'):
+            emails.add(email_href.get('href').replace('mailto:', ''))
+        for link in hrefs.select('a[href]'):
+            new_url = urljoin(base_url, link['href'])
+            if urlparse(new_url).hostname == urlparse(base_url).hostname:
                 if new_url not in visited:
-                    emails += find_emails(new_url, emails, visited)
-
-    return emails
+                    to_visit.add(new_url)
+        if len(to_visit) > 500:
+            print "More than 500 subpages have been found so far.", 
+            print "Terminating the program."
+            print_emails(emails)
+            sys.exit()
+        
+    print_emails(emails)
 
 def print_emails(emails):
     ''' prints all email addresses found '''
     print "Found these email addresses:"
-    emails = set(emails)
     for email in emails:
         print email
 
 def main(domain):
     ''' main function '''
-    emails = []
-    visited = [domain]     # preserve domain in first index
-    prefix = 'http://www.' # default is HTTP (some sites do not handle HTTPS)
-    emails = find_emails(prefix + args.domain, emails, visited)
-    print_emails(emails)
+    protocol = 'http://' # default is HTTP (some sites do not handle HTTPS)
+    find_emails(protocol + domain)
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description='prints emails from a website')
